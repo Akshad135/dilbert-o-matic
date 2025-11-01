@@ -1,0 +1,21 @@
+# --- Core Model & Training ---
+transformers[torch]
+datasets
+sentence-transformers
+scikit-learn
+sentencepiece
+
+# --- MLOps Orchestration & Tooling ---
+dagster
+dagster-webserver
+dagster-docker
+mlflow
+dvc
+bentoml
+evidently
+
+# --- API Clients & Utils ---
+groq
+requests
+pydantic
+streamlit
