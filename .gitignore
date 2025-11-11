@@ -63,6 +63,8 @@ runs/
 .dvc/tmp/
 dvc_remote/
 *.dvc.lock
+/training_data.jsonl
+/dvc_remote/
 
 # MLflow
 mlruns/
