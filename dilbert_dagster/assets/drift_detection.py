@@ -3,12 +3,14 @@ Asset: Jargon Drift Detector
 Checks if new jargon words are not in the known jargon list.
 """
 import pandas as pd
-from dagster import asset, context
+# Import the specific context 'AssetExecutionContext' instead of 'context'
+from dagster import asset, AssetExecutionContext
 from dilbert_dagster.constants import KNOWN_JARGON_FILE, NEW_JARGON_CANDIDATES_FILE
 
 
 @asset
-def jargon_drift_detector(context) -> dict:
+# Use the specific type hint 'AssetExecutionContext'
+def jargon_drift_detector(context: AssetExecutionContext) -> dict:
     """
     Detects if new jargon words represent a data drift.
     Returns metadata about detected drift.
@@ -37,5 +39,13 @@ def jargon_drift_detector(context) -> dict:
         }
     
     except FileNotFoundError as e:
-        context.log.warning(f"File not found: {e}. Initializing empty files.")
+        context.log.warning(f"File not found: {e}. Skipping drift check.")
+        # We must create the file to avoid repeated errors
+        try:
+            with open(NEW_JARGON_CANDIDATES_FILE, 'w') as f:
+                pass # create empty file
+            context.log.info(f"Created empty {NEW_JARGON_CANDIDATES_FILE.name}")
+        except Exception as create_e:
+            context.log.error(f"Could not create file {NEW_JARGON_CANDIDATES_FILE.name}: {create_e}")
+
         return {"drift_detected": False, "new_jargon": [], "timestamp": pd.Timestamp.now().isoformat()}

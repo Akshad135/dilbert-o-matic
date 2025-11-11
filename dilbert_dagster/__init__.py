@@ -4,3 +4,4 @@ A fully autonomous, closed-loop system for managing a corporate jargon translato
 """
 
 __version__ = "0.1.0"
+from .definitions import defs

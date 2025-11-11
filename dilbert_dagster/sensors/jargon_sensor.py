@@ -1,42 +1,38 @@
 """
-Jargon Sensor - File-based trigger for the MLOps pipeline
-Watches new_jargon_candidates.txt and triggers the drift detection workflow when changes occur.
+Dagster Sensor - Jargon Candidate Detector
+Watches new_jargon_candidates.txt and triggers the data processing job.
 """
 
-from dagster import sensor, DagsterEventType
-from pathlib import Path
-import json
+import os
+from dagster import sensor, RunRequest, SkipReason, SensorEvaluationContext
 
-from .. import constants
+# Import the constant from our central file
+from ..constants import NEW_JARGON_CANDIDATES_FILE
 
-@sensor(name="jargon_candidate_sensor")
-def jargon_candidate_sensor(context):
+def _get_mtime(file_path):
+    """Get the modification time of a file."""
+    return os.path.getmtime(file_path)
+
+@sensor(job_name="process_new_jargon_job")
+def jargon_candidate_sensor(context: SensorEvaluationContext):
     """
-    Detects changes to new_jargon_candidates.txt and yields an event to trigger downstream assets.
-    This is a simple implementation - in production, you'd use Dagster's built-in file sensors.
+    Checks for modifications to the candidates file and triggers 
+    the 'process_new_jargon_job' if changes are found.
     """
-    candidates_file = constants.NEW_JARGON_CANDIDATES_FILE
     
-    # Check if file exists
-    if not candidates_file.exists():
-        context.log.info(f"Candidates file not found at {candidates_file}, creating it...")
-        candidates_file.touch()
-        return
+    # Use the imported constant directly
+    monitor_file = NEW_JARGON_CANDIDATES_FILE
     
-    # Read the file
-    with open(candidates_file, 'r') as f:
-        content = f.read().strip()
+    if not monitor_file.exists():
+        return SkipReason(f"File {monitor_file.name} not found.")
+
+    last_mtime = float(context.cursor or 0)
+    current_mtime = _get_mtime(monitor_file)
+
+    if current_mtime > last_mtime:
+        context.log.info(f"New data detected in {monitor_file.name}. Triggering job.")
+        context.update_cursor(str(current_mtime))
+        # Yield a RunRequest for the job named "process_new_jargon_job"
+        return RunRequest(run_key=f"jargon_sensor_{current_mtime}")
     
-    if not content:
-        context.log.info("No new jargon candidates detected.")
-        return
-    
-    # Parse candidates (one per line)
-    candidates = [line.strip() for line in content.split('\n') if line.strip()]
-    
-    context.log.info(f"Detected {len(candidates)} new jargon candidates: {candidates}")
-    
-    # Return context for downstream asset
-    from dagster import DynamicOutput
-    for candidate in candidates:
-        yield DynamicOutput(candidate, mapping_key=candidate)
+    return SkipReason(f"No new data in {monitor_file.name}.")
