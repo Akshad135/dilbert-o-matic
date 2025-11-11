@@ -1,34 +1,25 @@
 """
 Dagster Definitions - Entry Point
-This file is automatically discovered by Dagster and defines all assets, jobs, and sensors.
+Defines all assets, jobs, and sensors.
 """
-
 from dagster import Definitions, define_asset_job
 
-# ============================================================================
 # IMPORT ASSETS DIRECTLY
-# ============================================================================
 from .assets.drift_detection import jargon_drift_detector
 from .assets.weak_labeler import weak_labeler
 from .assets.data_versioner import data_versioner
 
-# ============================================================================
 # IMPORT SENSORS
-# ============================================================================
 from .sensors.jargon_sensor import jargon_candidate_sensor
 
-# ============================================================================
 # LOAD ALL ASSETS
-# ============================================================================
 all_assets = [
     jargon_drift_detector,
     weak_labeler,
     data_versioner,
 ]
 
-# ============================================================================
 # DEFINE JOBS
-# ============================================================================
 process_new_jargon_job = define_asset_job(
     name="process_new_jargon_job",
     selection="*",
@@ -36,14 +27,10 @@ process_new_jargon_job = define_asset_job(
 
 all_jobs = [process_new_jargon_job]
 
-# ============================================================================
 # DEFINE SENSORS
-# ============================================================================
 all_sensors = [jargon_candidate_sensor]
 
-# ============================================================================
 # DAGSTER DEFINITIONS
-# ============================================================================
 defs = Definitions(
     assets=all_assets,
     sensors=all_sensors,

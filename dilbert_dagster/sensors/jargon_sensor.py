@@ -1,12 +1,8 @@
 """
-Dagster Sensor - Jargon Candidate Detector
 Watches new_jargon_candidates.txt and triggers the data processing job.
 """
-
 import os
 from dagster import sensor, RunRequest, SkipReason, SensorEvaluationContext
-
-# Import the constant from our central file
 from ..constants import NEW_JARGON_CANDIDATES_FILE
 
 def _get_mtime(file_path):
@@ -15,12 +11,8 @@ def _get_mtime(file_path):
 
 @sensor(job_name="process_new_jargon_job")
 def jargon_candidate_sensor(context: SensorEvaluationContext):
-    """
-    Checks for modifications to the candidates file and triggers 
-    the 'process_new_jargon_job' if changes are found.
-    """
+    """Checks for file modifications and triggers 'process_new_jargon_job'."""
     
-    # Use the imported constant directly
     monitor_file = NEW_JARGON_CANDIDATES_FILE
     
     if not monitor_file.exists():
@@ -32,7 +24,6 @@ def jargon_candidate_sensor(context: SensorEvaluationContext):
     if current_mtime > last_mtime:
         context.log.info(f"New data detected in {monitor_file.name}. Triggering job.")
         context.update_cursor(str(current_mtime))
-        # Yield a RunRequest for the job named "process_new_jargon_job"
         return RunRequest(run_key=f"jargon_sensor_{current_mtime}")
     
     return SkipReason(f"No new data in {monitor_file.name}.")
