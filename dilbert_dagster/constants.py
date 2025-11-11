@@ -60,12 +60,19 @@ DAGSTER_HOME = PROJECT_ROOT / ".dagster"
 # ============================================================================
 # Note: Load from environment variable in production
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "your_key_here")
-GROQ_MODEL = "llama-3-70b-8192"
-GROQ_WEAK_LABELER_PROMPT = (
-    "Generate 10 realistic corporate/workplace input-output pairs for the jargon word/phrase '{jargon}'. "
-    "Format each as JSON: {{'input': '...', 'output': '...'}}. "
-    "The output should transform simple workplace language into extreme corporate jargon."
-)
+GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_WEAK_LABELER_PROMPT = """
+You are a JSON data generator. Your sole output must be a single, valid JSON object.
+For the given corporate jargon word/phrase '{jargon}', generate 10 realistic corporate/workplace input-output pairs.
+
+Return a single JSON object in the following format:
+{{
+  "pairs": [
+    {{"input": "simple phrase", "output": "jargon-filled phrase"}},
+    {{"input": "...", "output":..."}}
+  ]
+}}
+"""
 
 # ============================================================================
 # QA / VALIDATION

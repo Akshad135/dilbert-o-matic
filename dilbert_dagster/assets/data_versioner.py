@@ -1,26 +1,35 @@
 """
 Asset: Data Versioner
-Versions the training data using DVC after it's updated by the weak_labeler.
-This creates an immutable, versioned snapshot of the data used for a training run.
+Versions all data assets (training data, known jargon) using DVC
+and cleans up the candidate file to "close the loop".
 """
 
 import subprocess
 import os
+import pandas as pd
 from dagster import asset, AssetExecutionContext
 
 # Import constants from our central constants file
 from ..constants import (
     PROJECT_ROOT,
-    TRAINING_DATA_FILE
+    TRAINING_DATA_FILE,
+    KNOWN_JARGON_FILE,
+    NEW_JARGON_CANDIDATES_FILE
 )
 
-# This asset depends on the 'weak_labeler'
-# It will only run after 'weak_labeler' successfully completes.
+# This asset now depends on *both* upstream assets
 @asset
-def data_versioner(context: AssetExecutionContext, weak_labeler: dict) -> dict:
+def data_versioner(
+    context: AssetExecutionContext, 
+    weak_labeler: dict, 
+    jargon_drift_detector: dict
+) -> dict:
     """
-    Runs 'dvc add' and 'dvc push' on the training data file 
-    if the weak_labeler added new pairs.
+    If weak_labeler was successful:
+    1. Appends new jargon to known_jargon.csv
+    2. Runs 'dvc add' on both training_data.jsonl and known_jargon.csv
+    3. Runs 'dvc push'
+    4. Clears new_jargon_candidates.txt
     """
     
     # 1. Check upstream status
@@ -34,20 +43,36 @@ def data_versioner(context: AssetExecutionContext, weak_labeler: dict) -> dict:
         context.log.info("Weak labeler ran but generated 0 pairs. No new data to version. Skipping.")
         return {"status": "skipped_no_new_data"}
         
-    context.log.info(f"Weak labeler added {new_pairs} new pairs. Versioning {TRAINING_DATA_FILE.name} with DVC...")
+    context.log.info(f"Weak labeler added {new_pairs} new pairs. Versioning all data assets...")
 
-    # 2. Define helper function to run shell commands
+    # 2. Get the new jargon list from the drift detector
+    new_jargon_list = jargon_drift_detector.get("new_jargon", [])
+
+    if not new_jargon_list:
+        context.log.warning("Weak labeler succeeded, but new jargon list was empty. Skipping data versioning.")
+        return {"status": "skipped_no_new_jargon_list"}
+
+    # 3. Append new jargon to known_jargon.csv
+    try:
+        new_jargon_df = pd.DataFrame(new_jargon_list, columns=['jargon'])
+        # Append to the CSV, don't write header if file already exists
+        new_jargon_df.to_csv(
+            KNOWN_JARGON_FILE, 
+            mode='a', 
+            header=not KNOWN_JARGON_FILE.exists(), 
+            index=False
+        )
+        context.log.info(f"Appended {len(new_jargon_list)} words to {KNOWN_JARGON_FILE.name}")
+    except Exception as e:
+        context.log.error(f"Failed to append new jargon to {KNOWN_JARGON_FILE.name}: {e}")
+        return {"status": "error_writing_known_jargon"}
+
+    # 4. Helper function to run shell commands (no changes)
     def run_dvc_command(cmd: list):
-        """Helper to run a subprocess command from the project root."""
         context.log.info(f"Running command: {' '.join(cmd)}")
         try:
-            # Run command from the project root, using the constant
             result = subprocess.run(
-                cmd,
-                check=True,
-                capture_output=True,
-                text=True,
-                cwd=PROJECT_ROOT
+                cmd, check=True, capture_output=True, text=True, cwd=PROJECT_ROOT
             )
             context.log.info(f"DVC STDOUT: {result.stdout}")
             if result.stderr:
@@ -60,31 +85,37 @@ def data_versioner(context: AssetExecutionContext, weak_labeler: dict) -> dict:
             context.log.error(f"DVC command not found. Is DVC installed and in the PATH?")
             return False
 
-    # 3. Get the relative path for the training file (DVC works better with relative paths)
-    # We use os.path.relpath to ensure it's correct
+    # 5. Get relative paths for DVC
     try:
-        relative_data_path = os.path.relpath(TRAINING_DATA_FILE, PROJECT_ROOT)
+        rel_training_data_path = os.path.relpath(TRAINING_DATA_FILE, PROJECT_ROOT)
+        rel_jargon_file_path = os.path.relpath(KNOWN_JARGON_FILE, PROJECT_ROOT)
     except Exception as e:
-        context.log.error(f"Could not calculate relative path: {e}. Using filename.")
-        # Fallback to just the filename
-        relative_data_path = TRAINING_DATA_FILE.name
+        context.log.error(f"Could not calculate relative paths: {e}. Aborting.")
+        return {"status": "error_path_calculation"}
 
-    # 4. Run 'dvc add'
-    # We are adding the file specified in constants.py
-    add_cmd = ["dvc", "add", relative_data_path]
-    if not run_dvc_command(add_cmd):
-        context.log.error("Failed to 'dvc add' the data file.")
-        return {"status": "error_dvc_add"}
+    # 6. Run 'dvc add' on BOTH files
+    if not run_dvc_command(["dvc", "add", rel_training_data_path]):
+        return {"status": "error_dvc_add_training_data"}
+    
+    if not run_dvc_command(["dvc", "add", rel_jargon_file_path]):
+        return {"status": "error_dvc_add_known_jargon"}
         
-    # 5. Run 'dvc push'
-    push_cmd = ["dvc", "push"]
-    if not run_dvc_command(push_cmd):
-        context.log.error("Failed to 'dvc push' the data file.")
+    # 7. Run 'dvc push'
+    if not run_dvc_command(["dvc", "push"]):
         return {"status": "error_dvc_push"}
         
-    context.log.info(f"Successfully versioned and pushed {relative_data_path} to DVC remote.")
+    context.log.info(f"Successfully versioned and pushed {rel_training_data_path} and {rel_jargon_file_path} to DVC remote.")
     
+    # 8. Clear the candidates file to "close the loop"
+    try:
+        with open(NEW_JARGON_CANDIDATES_FILE, 'w') as f:
+            f.write("") # Truncate the file
+        context.log.info(f"Cleared {NEW_JARGON_CANDIDATES_FILE.name} for next run.")
+    except Exception as e:
+        context.log.error(f"Failed to clear {NEW_JARGON_CANDIDATES_FILE.name}: {e}")
+        return {"status": "error_clearing_candidates"}
+
     return {
         "status": "success",
-        "versioned_file": relative_data_path
+        "versioned_files": [rel_training_data_path, rel_jargon_file_path]
     }

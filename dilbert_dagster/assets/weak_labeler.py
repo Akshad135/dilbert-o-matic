@@ -18,8 +18,6 @@ from ..constants import (
 )
 
 # This asset depends on the 'jargon_drift_detector' asset.
-# Dagster knows to pass the output of that asset (a dictionary)
-# as the first argument.
 @asset
 def weak_labeler(context: AssetExecutionContext, jargon_drift_detector: dict) -> dict:
     """
@@ -38,7 +36,6 @@ def weak_labeler(context: AssetExecutionContext, jargon_drift_detector: dict) ->
         return {"new_pairs_generated": 0, "status": "skipped"}
 
     # 2. Check for Groq API Key
-    # The key is "your_key_here" in constants.py, so we check that
     if GROQ_API_KEY == "your_key_here" or not GROQ_API_KEY:
         context.log.error(
             "GROQ_API_KEY is not configured. "
@@ -61,32 +58,37 @@ def weak_labeler(context: AssetExecutionContext, jargon_drift_detector: dict) ->
         try:
             chat_completion = client.chat.completions.create(
                 messages=[
-                    {"role": "system", "content": "You are a JSON data generator."},
+                    # System prompt helps enforce JSON-only output
+                    {"role": "system", "content": "You are a JSON data generator. Your output MUST be a single, valid JSON object."},
                     {"role": "user", "content": prompt},
                 ],
                 model=GROQ_MODEL,
                 temperature=0.7,
+                # THIS IS THE FIX YOU SUGGESTED:
+                response_format={"type": "json_object"}
             )
             
             response_content = chat_completion.choices[0].message.content
-            context.log.debug(f"Groq API response: {response_content}")
+            context.log.debug(f"Groq API JSON response: {response_content}")
 
-            # 4. Parse the API response
-            # The prompt asks for JSON, so we expect one JSON object per line
-            for line in response_content.strip().split('\n'):
-                try:
-                    # Clean up any potential markdown backticks
-                    clean_line = line.strip().replace("```json", "").replace("```", "")
-                    if not clean_line:
-                        continue
-                        
-                    pair = json.loads(clean_line)
+            # 4. Parse the API response (new, more robust logic)
+            try:
+                data = json.loads(response_content)
+                generated_pairs = data.get("pairs", [])
+                
+                if not generated_pairs:
+                    context.log.warning(f"Groq returned valid JSON, but the 'pairs' list was empty or missing for '{jargon_word}'.")
+                    continue # Go to the next jargon word
+
+                for pair in generated_pairs:
                     if "input" in pair and "output" in pair:
                         new_training_pairs.append(pair)
                     else:
-                        context.log.warning(f"Invalid JSON pair from Groq: {line}")
-                except json.JSONDecodeError:
-                    context.log.warning(f"Failed to decode JSON from Groq: {line}")
+                        context.log.warning(f"Invalid pair object from Groq: {pair}")
+            
+            except json.JSONDecodeError:
+                context.log.error(f"Failed to decode the *entire* JSON object from Groq for '{jargon_word}': {response_content}")
+                continue # Go to the next jargon word
 
         except Exception as e:
             context.log.error(f"Error calling Groq API for '{jargon_word}': {e}")
