@@ -1,4 +1,6 @@
 [core]
-    remote = local_storage
+    remote = origin
 ['remote "local_storage"']
     url = ../dvc_remote
+['remote "origin"']
+    url = https://dagshub.com/Akshad135/dilbert-o-matic.dvc

@@ -36,7 +36,7 @@ MLFLOW_EXPERIMENT_NAME = "dilbert-o-matic"
 # Training parameters
 TRAINING_BATCH_SIZE = 4
 TRAINING_EPOCHS = 20
-TRAINING_LEARNING_RATE = 5e-4
+TRAINING_LEARNING_RATE = 3e-4
 TRAINING_WARMUP_RATIO = 0.15
 
 # Inference parameters
@@ -68,10 +68,42 @@ Return a single JSON object in the following format:
 """
 
 # QA / VALIDATION
-QA_GOLDEN_TEST_EXAMPLES = 20
-QA_MIN_COSINE_DISTANCE = 0.5
-QA_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+QA_JUDGE_MIN_SCORE = 4.0
+QA_JUDGE_SLEEP_TIME = 5
+QA_JUDGE_PROMPT = """
+You are an expert evaluator for a text style transfer model.
+Your goal is to evaluate if the "Model Output" is a good corporate jargon translation of the "Original Input".
+Your evaluation MUST focus on CONTENT PRESERVATION.
 
+---
+EXAMPLES
+- Original Input: "The project is delayed."
+- Model Output: "We're seeing timeline slippage on this initiative."
+- Evaluation: This is a 5/5. The meaning is preserved perfectly.
+
+- Original Input: "The project is delayed."
+- Model Output: "The project has been successfully completed."
+- Evaluation: This is a 1/5. The meaning is the complete opposite.
+
+- Original Input: "Let's start the project."
+- Output: "We should convene a strategic synergy to synergize our efforts."
+- Evaluation: This is a 1/5. This is a vague, repetitive hallucination that does not mean 'start'.
+---
+
+Now, evaluate this pair. On a scale of 1 to 5, how well did the model preserve the original meaning?
+1 = Total meaning change or hallucination.
+5 = Perfect meaning preservation.
+
+Return ONLY a single, valid JSON object with your score and reasoning.
+
+Original Input: "{input}"
+Model Output: "{output}"
+
+{{
+  "score": <1-5>,
+  "reasoning": "<Your brief reason for the score>"
+}}
+"""
 # DVC CONFIG
 DVC_REMOTE_NAME = "local_storage"
 DVC_REMOTE_PATH = str(DVC_REMOTE)

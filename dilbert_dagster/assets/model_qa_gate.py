@@ -1,29 +1,27 @@
 """
-This asset acts as a "gate" after training. It loads the newly trained
-model and a "golden set" of QA examples. It then uses a
-SentenceTransformer (embedding) model to compare the semantic similarity
-of the model's generated answers against the "golden" answers.
-
-If the average similarity score is above a threshold, the gate "passes".
-This result is logged to MLflow in the *same run* as the training.
+Runs a post-training QA evaluation using a "golden set" and an LLM (Groq) as a semantic judge.
+Logs the result to the same MLflow run. The gate passes if the model meets the score threshold.
 """
-
 
 import torch
 import mlflow
-import pandas as pd
+import json
+import time
+from groq import Groq
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from sentence_transformers import SentenceTransformer, util
 from dagster import asset, AssetExecutionContext
 from ..constants import (
     MODEL_V1_DIR,
     QA_GOLDEN_SET_FILE,
-    QA_EMBEDDING_MODEL,
-    QA_MIN_COSINE_DISTANCE,
     MODEL_MAX_LENGTH,
     INFERENCE_NUM_BEAMS,
     MLFLOW_TRACKING_URI,
+    GROQ_API_KEY,
+    GROQ_MODEL,
+    QA_JUDGE_PROMPT,
+    QA_JUDGE_MIN_SCORE,
+    QA_JUDGE_SLEEP_TIME,
 )
 from .model_trainer import model_trainer
 
@@ -37,6 +35,12 @@ def model_qa_gate(context: AssetExecutionContext, model_trainer: dict) -> dict:
 
     run_id = model_trainer.get("run_id")
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_key_here":
+        context.log.error("GROQ_API_KEY not set. Skipping QA.")
+        return {"status": "error_api_key_missing", "qa_passed": False}
+    
+    client = Groq(api_key=GROQ_API_KEY)
 
     with mlflow.start_run(run_id=run_id):
         try:
@@ -51,10 +55,6 @@ def model_qa_gate(context: AssetExecutionContext, model_trainer: dict) -> dict:
             trained_model.eval()
             tokenizer = AutoTokenizer.from_pretrained(str(MODEL_V1_DIR))
 
-            context.log.info(f"Loading embedding model: {QA_EMBEDDING_MODEL}")
-            embedding_model = SentenceTransformer(QA_EMBEDDING_MODEL, device=device)
-
-            # Inference on QA inputs
             prefix = "Translate to corporate jargon: "
             prompts = [prefix + s for s in qa_df["input"]]
             batch = tokenizer(prompts, return_tensors="pt", truncation=True, padding=True).to(device)
@@ -70,18 +70,53 @@ def model_qa_gate(context: AssetExecutionContext, model_trainer: dict) -> dict:
 
             generated_outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
             expected_outputs = qa_df["expected_output"].tolist()
+            
+            context.log.info("Starting LLM-as-a-Judge Evaluation")
+            all_scores = []
+            
+            for i in range(len(qa_df)):
+                input_text = qa_df["input"][i]
+                model_output = generated_outputs[i]
+                
+                context.log.info(f"IN:  {input_text}")
+                context.log.info(f"OUT: {model_output}")
+                context.log.info(f"EXP: {expected_outputs[i]}")
 
-            # Cosine similarity between generated and expected outputs
-            expected_embeddings = embedding_model.encode(expected_outputs, convert_to_tensor=True)
-            generated_embeddings = embedding_model.encode(generated_outputs, convert_to_tensor=True)
-            cosine_scores = util.cos_sim(expected_embeddings, generated_embeddings)
-            average_score = torch.diag(cosine_scores).mean().item()
+                prompt = QA_JUDGE_PROMPT.format(input=input_text, output=model_output)
+                
+                try:
+                    result = client.chat.completions.create(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=GROQ_MODEL,
+                        temperature=0.1,
+                        response_format={"type": "json_object"},
+                    )
+                    
+                    data = json.loads(result.choices[0].message.content)
+                    score = int(data.get("score", 0))
+                    reasoning = data.get("reasoning", "No reasoning provided.")
+                    all_scores.append(score)
+                    
+                    context.log.info(f"SCORE: {score}/5 | REASON: {reasoning}")
+                    context.log.info("-" * 20)
+                    
+                except Exception as e:
+                    context.log.error(f"Failed to get QA score for item {i}: {e}")
+                    context.log.info("-" * 20)
+                
+                time.sleep(QA_JUDGE_SLEEP_TIME)
 
-            passed = average_score >= QA_MIN_COSINE_DISTANCE
-            context.log.info(f"QA Score: {average_score:.4f} / Threshold: {QA_MIN_COSINE_DISTANCE}")
+            if not all_scores:
+                context.log.error("No QA scores were recorded. Failing gate.")
+                return {"status": "failed", "qa_passed": False, "error": "No scores recorded"}
+
+            average_score = sum(all_scores) / len(all_scores)
+            passed = average_score >= QA_JUDGE_MIN_SCORE
+
+            context.log.info(f"QA Judge Score: {average_score:.4f} / Threshold: {QA_JUDGE_MIN_SCORE}")
             context.log.info(f"QA Gate Passed: {passed}")
 
-            mlflow.log_metric("qa_cosine_similarity", average_score)
+            mlflow.log_metric("qa_judge_score", average_score)
             mlflow.log_param("qa_gate_passed", str(passed))
 
             return {"status": "success", "qa_passed": passed, "qa_score": average_score}

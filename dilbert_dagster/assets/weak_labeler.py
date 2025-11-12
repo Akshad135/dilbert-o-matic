@@ -28,15 +28,30 @@ def weak_labeler(context: AssetExecutionContext, jargon_drift_detector: dict) ->
     if not GROQ_API_KEY or GROQ_API_KEY == "your_key_here":
         return {"new_pairs_generated": 0, "status": "error_api_key_missing"}
 
-    # Load style guide examples for few-shot prompting
+    
     try:
+        if not STYLE_GUIDE_FILE.exists():
+            context.log.error(f"Style guide file not found at: {STYLE_GUIDE_FILE}")
+            return {"new_pairs_generated": 0, "status": "error_missing_style_guide"}
+
         with open(STYLE_GUIDE_FILE, "r") as f:
             style_pool = [json.loads(line) for line in f if line.strip()]
+        
         if not style_pool:
+            context.log.warning("Style guide file exists, but is empty.")
             return {"new_pairs_generated": 0, "status": "error_empty_style_guide"}
-    except Exception:
-        return {"new_pairs_generated": 0, "status": "error_missing_style_guide"}
-
+            
+    except json.JSONDecodeError as e:
+        context.log.error(
+            f"Failed to decode JSON from {STYLE_GUIDE_FILE}: {e}. "
+            "Is it a DVC pointer file? Run 'dvc pull'."
+        )
+        return {"new_pairs_generated": 0, "status": "error_corrupt_style_guide"}
+        
+    except Exception as e:
+        context.log.error(f"An unexpected error occurred while reading style guide: {e}")
+        return {"new_pairs_generated": 0, "status": "error_unknown_read_error"}
+    
     client = Groq(api_key=GROQ_API_KEY)
     new_training_pairs = []
 
@@ -69,7 +84,6 @@ def weak_labeler(context: AssetExecutionContext, jargon_drift_detector: dict) ->
     if not new_training_pairs:
         return {"new_pairs_generated": 0, "status": "no_pairs_generated"}
 
-    # Append generated pairs to training data + style guide
     try:
         with open(TRAINING_DATA_FILE, "a") as f, open(STYLE_GUIDE_FILE, "a") as f2:
             for pair in new_training_pairs:
