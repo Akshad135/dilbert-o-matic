@@ -7,8 +7,8 @@ from pathlib import Path
 
 # PROJECT PATHS
 PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
 MODELS_DIR = PROJECT_ROOT / "models"
-MLFLOW_STORE = PROJECT_ROOT / "mlflow_store"
 DVC_REMOTE = PROJECT_ROOT / "dvc_remote"
 
 # Model paths
@@ -16,14 +16,22 @@ MODEL_V1_DIR = MODELS_DIR / "t5_jargon_v1"
 MODEL_CHECKPOINTS_DIR = MODELS_DIR / "t5_jargon_v1_checkpoints"
 
 # DATA PATHS
-TRAINING_DATA_FILE = PROJECT_ROOT / "training_data.jsonl"
+TRAINING_DATA_FILE = DATA_DIR / "training_data.jsonl"
+STYLE_GUIDE_FILE = DATA_DIR / "style_guide.jsonl"
 NEW_JARGON_CANDIDATES_FILE = PROJECT_ROOT / "new_jargon_candidates.txt"
-KNOWN_JARGON_FILE = PROJECT_ROOT / "known_jargon.csv"
+KNOWN_JARGON_FILE = DATA_DIR / "known_jargon.csv"
+QA_GOLDEN_SET_FILE = DATA_DIR / "qa_golden_set.jsonl"
 
 # MODEL CONFIG
 BASE_MODEL_NAME = "google/flan-t5-small"
 MODEL_MAX_LENGTH = 128
 MODEL_MIN_LENGTH = 20
+
+# --- MLFLOW CONFIG ---
+MLFLOW_STORE = PROJECT_ROOT / "mlflow_store"
+MLFLOW_ARTIFACT_ROOT = MLFLOW_STORE / "artifacts"
+MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+MLFLOW_EXPERIMENT_NAME = "dilbert-o-matic"
 
 # Training parameters
 TRAINING_BATCH_SIZE = 4
@@ -37,9 +45,18 @@ INFERENCE_NUM_BEAMS = 4
 # GROQ API (Weak Labeler)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "your_key_here")
 GROQ_MODEL = "llama-3.3-70b-versatile"
+NUM_FEW_SHOT_EXAMPLES = 3
 GROQ_WEAK_LABELER_PROMPT = """
-You are a JSON data generator. Your sole output must be a single, valid JSON object.
-For the given corporate jargon word/phrase '{jargon}', generate 10 realistic corporate/workplace input-output pairs.
+You are a helpful assistant who generates synthetic training data for a machine learning model.
+Your response MUST be a single, valid JSON object.
+Your generated pairs MUST match the style, creativity, and tone of the examples provided.
+
+---
+EXAMPLES OF THE STYLE I WANT:
+{style_examples_str}
+---
+
+Now, following that EXACT style, generate 10 new, high-quality input-output pairs for the given corporate jargon word/phrase: '{jargon}'.
 
 Return a single JSON object in the following format:
 {{

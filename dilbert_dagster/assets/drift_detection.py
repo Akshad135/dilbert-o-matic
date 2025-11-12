@@ -37,7 +37,7 @@ def jargon_drift_detector(context: AssetExecutionContext) -> dict:
         # CRITICAL: Create candidate file if missing to prevent repeated errors
         try:
             with open(NEW_JARGON_CANDIDATES_FILE, 'w') as f:
-                pass # create empty file
+                pass
             context.log.info(f"Created empty {NEW_JARGON_CANDIDATES_FILE.name}")
         except Exception as create_e:
             context.log.error(f"Could not create file {NEW_JARGON_CANDIDATES_FILE.name}: {create_e}")

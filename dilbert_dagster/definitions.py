@@ -8,6 +8,9 @@ from dagster import Definitions, define_asset_job
 from .assets.drift_detection import jargon_drift_detector
 from .assets.weak_labeler import weak_labeler
 from .assets.data_versioner import data_versioner
+from .assets.model_trainer import model_trainer
+from .assets.model_qa_gate import model_qa_gate
+from .assets.model_registry_promoter import model_registry_promoter
 
 # IMPORT SENSORS
 from .sensors.jargon_sensor import jargon_candidate_sensor
@@ -17,6 +20,9 @@ all_assets = [
     jargon_drift_detector,
     weak_labeler,
     data_versioner,
+    model_trainer,
+    model_qa_gate,
+    model_registry_promoter,
 ]
 
 # DEFINE JOBS

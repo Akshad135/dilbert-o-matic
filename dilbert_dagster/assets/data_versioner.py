@@ -96,7 +96,7 @@ def data_versioner(
     
     try:
         with open(NEW_JARGON_CANDIDATES_FILE, 'w') as f:
-            f.write("") # Truncate the file
+            f.write("")
         context.log.info(f"Cleared {NEW_JARGON_CANDIDATES_FILE.name} for next run.")
     except Exception as e:
         context.log.error(f"Failed to clear {NEW_JARGON_CANDIDATES_FILE.name}: {e}")

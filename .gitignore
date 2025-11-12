@@ -63,9 +63,7 @@ runs/
 .dvc/tmp/
 dvc_remote/
 *.dvc.lock
-/training_data.jsonl
 /dvc_remote/
-/known_jargon.csv
 
 # MLflow
 mlruns/
@@ -77,6 +75,7 @@ mlartifacts/
 .dagster/
 .pytest_cache/
 dagster_test/
+.tmp_dagster_home*
 
 # BentoML
 bentoml_artifacts/
