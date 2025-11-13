@@ -2,235 +2,236 @@ import streamlit as st
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 import torch
 import os
+import random
 
 # Page configuration
 st.set_page_config(
-    page_title="Corporate Jargon Translator",
+    page_title="Dilbert-o-Matic — Clean",
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
-# Custom CSS for modern, smooth styling
-st.markdown("""
-<style>
-    /* Main container styling */
-    .block-container {
-        padding-top: 3rem;
-        padding-bottom: 3rem;
+st.markdown(
+    """
+    <style>
+    :root { color-scheme: light; }
+
+    /* App canvas */
+    html, body, .stApp, [data-testid='stAppViewContainer'] > .main, .block-container {
+        background-color: #ffffff !important;
+        color: #000000 !important;
     }
-    
-    /* Custom card styling */
-    .stTextArea textarea {
-        border-radius: 12px !important;
-        border: 2px solid #e0e0e0 !important;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07) !important;
-        transition: all 0.3s ease !important;
-        font-size: 16px !important;
-        padding: 15px !important;
+
+    /* Hide Streamlit chrome (optional) */
+    header, footer { visibility: hidden !important; height: 0 !important; }
+
+    .block-container { padding-top: 3rem !important; padding-left: 36px !important; padding-right: 36px !important; }
+
+    .app-title { text-align: center; font-size: 3.2rem; margin: 0; color: #111 !important; font-weight: 800; }
+    .app-subtitle { text-align: center; color: #666; margin-top: 4px; margin-bottom: 18px; }
+
+    textarea, .stTextArea textarea, .stTextInput input, input[type="text"], .stNumberInput input {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: 1px solid #e6e6e6 !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
+        box-shadow: none !important;
+        font-size: 15px !important;
     }
-    
-    .stTextArea textarea:focus {
-        border-color: #4CAF50 !important;
-        box-shadow: 0 6px 12px rgba(76, 175, 80, 0.2) !important;
-    }
-    
-    /* Button styling */
-    .stButton button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border-radius: 12px !important;
-        padding: 0.75rem 2rem !important;
-        font-size: 18px !important;
+
+    textarea::placeholder, input::placeholder { color: #999 !important; }
+
+    .stButton>button, .stDownloadButton>button {
+        background: #111 !important;
+        color: #fff !important;
+        border-radius: 8px !important;
+        padding: 8px 14px !important;
         font-weight: 600 !important;
         border: none !important;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
-        transition: all 0.3s ease !important;
-        width: 100% !important;
     }
-    
-    .stButton button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5) !important;
-    }
-    
-    /* Column containers */
-    [data-testid="column"] {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 16px;
-        padding: 2rem;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    /* Header styling */
-    h1 {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 800 !important;
-        letter-spacing: -1px;
-    }
-    
-    h3 {
-        color: #666;
-        font-weight: 500;
-    }
-    
-    /* Divider styling */
-    hr {
-        margin: 2rem 0;
-        border: none;
-        height: 2px;
-        background: linear-gradient(90deg, transparent, #667eea, transparent);
-    }
-    
-    /* Expander styling */
-    .streamlit-expanderHeader {
-        background: rgba(102, 126, 234, 0.1);
-        border-radius: 10px;
-        font-weight: 600;
-    }
-</style>
-""", unsafe_allow_html=True)
 
-# Model loading functions
+    /* Expander Container & Content (The white box) */
+    .stExpander, .streamlit-expanderContent {
+        background-color: #ffffff !important;
+        border: 1px solid #f0f0f0 !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+        color: #000000 !important;
+    }
+
+    /* Expander Header (The clickable bar) - Aggressive Fix */
+    .streamlit-expanderHeader, /* Legacy Streamlit */
+    [data-testid="stExpander"] summary /* Modern Streamlit */
+    {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border-radius: 8px;
+        box-shadow: none !important;
+    }
+
+    /* Force hover/active states to also be white/black */
+    [data-testid="stExpander"] summary:hover,
+    [data-testid="stExpander"] summary:active {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    /* Defensive: reduce visual surprises */
+    * { box-shadow: none !important; background-image: none !important; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 @st.cache_resource
-def load_model():
-    """Load the T5 model and tokenizer from local directory"""
+def load_model(model_path: str = "models/t5_jargon_v1"):
+    """Load the fine-tuned T5 model + tokenizer. Returns (model, tokenizer, device) or (None, None, None) if not found."""
     try:
-        model_path = "models/t5_jargon_v1"
-        
         if not os.path.exists(model_path):
             return None, None, None
-        
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = T5ForConditionalGeneration.from_pretrained(model_path).to(device)
+        model = T5ForConditionalGeneration.from_pretrained(model_path)
+        model.to(device)
         tokenizer = T5Tokenizer.from_pretrained(model_path)
         model.eval()
-        
         return model, tokenizer, device
     except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
+        # We don't call st.* functions inside cached function (keeps cache deterministic),
+        # the caller will show the error UI instead.
         return None, None, None
 
-def translate_text(text, model, tokenizer, device):
-    """Translate input text to corporate jargon"""
-    input_text = f"Translate to corporate jargon: {text}"
-    input_ids = tokenizer.encode(input_text, return_tensors="pt").to(device)
-    
+
+def translate_text(text: str, model, tokenizer, device, max_length: int = 128):
+    """Translate the provided text to 'corporate jargon' using the loaded model."""
+    if not text.strip():
+        return ""
+
+    prefix = "Translate to corporate jargon:"
+    input_text = f"{prefix} {text.strip()}"
+
+    # Tokenize safely with truncation/padding and move tensors to device
+    inputs = tokenizer(
+        input_text,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=256,
+    )
+    input_ids = inputs["input_ids"].to(device)
+    attention_mask = inputs.get("attention_mask")
+    if attention_mask is not None:
+        attention_mask = attention_mask.to(device)
+
     with torch.no_grad():
         outputs = model.generate(
-            input_ids,
-            max_length=128,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_length=max_length,
             num_beams=5,
             early_stopping=True,
-            temperature=0.7
+            do_sample=False,
         )
-    
+
     translated = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return translated
 
-# Main app
+
+def clear_input():
+    st.session_state["input_text"] = ""
+
+
 def main():
-    # Header section
-    st.markdown("<h1 style='text-align: center; font-size: 3.5rem; margin-bottom: 0;'>🤖 The Dilbert-o-Matic 3000</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #888; margin-top: 0;'>Transform plain English into enterprise-grade corporate speak</h3>", unsafe_allow_html=True)
-    
+    st.markdown("<div class='app-title'>🤖 The Dilbert-o-Matic 3000</div>", unsafe_allow_html=True)
+    st.markdown("<div class='app-subtitle'>Transform plain English into enterprise-grade corporate speak</div>", unsafe_allow_html=True)
+
     st.divider()
-    
-    # Load model
+
     model, tokenizer, device = load_model()
-    
+
     if model is None:
-        st.error("⚠️ **Model not found!** Please run the training pipeline first to create the fine-tuned model in `models/t5_jargon_v1`.")
-        st.info("💡 The model needs to be trained before you can translate text to corporate jargon.")
+        st.error("⚠️ Model not found. Please train or place the fine-tuned model in `models/t5_jargon_v1`.")
+        with st.expander("How to fix"):
+            st.markdown("""
+            1. Run your training pipeline and confirm `models/t5_jargon_v1` exists.
+            2. The directory must contain the model checkpoint and tokenizer files (pytorch_model.bin, config.json, tokenizer files).
+            3. Re-run this app.
+            """)
         return
-    
-    # Success message
-    st.success(f"✅ Model loaded successfully on **{device.type.upper()}**")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Two-column layout
-    col1, col2 = st.columns(2, gap="large")
-    
+
+    st.success(f"✅ Model loaded on **{device.type.upper()}**")
+
+    col1, col2 = st.columns([1, 1], gap="large")
+
     with col1:
         st.markdown("### 📝 Input")
         input_text = st.text_area(
             "Enter your plain English text:",
-            height=250,
+            key="input_text",
+            height=220,
             placeholder="Type something simple like 'We need to improve our sales'...",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
-        
-        translate_button = st.button("🚀 Translate to Jargon", use_container_width=True)
-    
+
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            translate_button = st.button("🚀 Translate to Jargon", use_container_width=True)
+        with c2:
+            clear_button = st.button(
+                "🧽 Clear", 
+                use_container_width=True,
+                on_click=clear_input
+            )
+
     with col2:
         st.markdown("### 💼 Corporate Translation")
-        output_placeholder = st.empty()
-    
-    # Translation logic
-    if translate_button and input_text.strip():
-        spinner_messages = [
-            "Operationalizing synergies...",
-            "Recalibrating value proposition...",
-            "Leveraging core competencies...",
-            "Driving stakeholder alignment...",
-            "Optimizing strategic frameworks...",
-            "Deploying best practices..."
-        ]
-        
-        import random
-        spinner_message = random.choice(spinner_messages)
-        
-        with st.spinner(spinner_message):
-            translated_output = translate_text(input_text, model, tokenizer, device)
-        
-        with output_placeholder.container():
-            st.text_area(
-                "Translation:",
-                value=translated_output,
-                height=250,
-                label_visibility="collapsed"
-            )
-    elif translate_button:
-        st.warning("⚠️ Please enter some text to translate!")
+        output_area = st.empty()
+
+    if translate_button:
+        if not input_text or not input_text.strip():
+            st.warning("⚠️ Please enter some text to translate!")
+        else:
+            spinner_messages = [
+                "Operationalizing synergies...",
+                "Recalibrating value proposition...",
+                "Leveraging core competencies...",
+                "Driving stakeholder alignment...",
+                "Optimizing strategic frameworks...",
+                "Deploying best practices...",
+            ]
+            spinner_message = random.choice(spinner_messages)
+
+            with st.spinner(spinner_message):
+                try:
+                    translated_output = translate_text(input_text, model, tokenizer, device)
+                except Exception as e:
+                    translated_output = f"Error during generation: {e}"
+
+            output_area.text_area("Translation:", value=translated_output, height=220, label_visibility="collapsed")
     else:
-        with output_placeholder.container():
-            st.text_area(
-                "Translation:",
-                value="Your corporate jargon will appear here...",
-                height=250,
-                disabled=True,
-                label_visibility="collapsed"
-            )
-    
+        output_area.text_area(
+            "Translation:",
+            value="Your corporate jargon will appear here...",
+            height=220,
+            disabled=True,
+            label_visibility="collapsed",
+        )
+
     st.divider()
-    
-    # Footer
+
     with st.expander("ℹ️ About this App"):
-        st.markdown("""
-        ### The Dilbert-o-Matic 3000
-        
-        This application uses a **fine-tuned T5 transformer model** to translate plain English into corporate jargon.
-        
-        **Model Details:**
-        - **Base Model:** T5 (Text-to-Text Transfer Transformer)
-        - **Location:** `models/t5_jargon_v1`
-        - **Task:** Sequence-to-sequence translation
-        - **Training:** Fine-tuned on corporate jargon examples
-        
-        **How it works:**
-        1. You input plain English text
-        2. The model processes it with the prefix "Translate to corporate jargon:"
-        3. The T5 model generates a jargon-filled translation
-        4. Enjoy your newly synergized, strategically-aligned output! 🎯
-        
-        ---
-        *Built with Streamlit, Transformers, and a healthy dose of corporate buzzwords.*
-        """)
+        st.markdown(
+            """
+        **The Dilbert-o-Matic 3000** — a small T5-based demo that rewrites plain English as corporate jargon.
+
+        **Model location:** `models/t5_jargon_v1`
+        **Notes:** This cleaned version removes duplicate imports and duplicate functions, consolidates CSS
+        into one block, and ensures the header/title is visible and centered.
+        """
+        )
+
 
 if __name__ == "__main__":
     main()
