@@ -41,6 +41,14 @@ st.markdown(
         font-size: 15px !important;
     }
 
+    /* --- FIX 1: Make disabled text area readable --- */
+    textarea[disabled], input[disabled] {
+        color: #000000 !important; /* Force text to black */
+        -webkit-text-fill-color: #000000 !important; /* For Safari/Chrome */
+        opacity: 1 !important; /* Override default disabled opacity */
+        background-color: #f5f5f5 !important; /* Light gray to show it's disabled */
+    }
+
     textarea::placeholder, input::placeholder { color: #999 !important; }
 
     .stButton>button, .stDownloadButton>button {
@@ -61,19 +69,22 @@ st.markdown(
         color: #000000 !important;
     }
 
-    /* Expander Header (The clickable bar) - Aggressive Fix */
+    /* --- FIX 2: Force expander header to be white/black --- */
     .streamlit-expanderHeader, /* Legacy Streamlit */
     [data-testid="stExpander"] summary /* Modern Streamlit */
     {
+        background: #ffffff !important; /* Use background property */
         background-color: #ffffff !important;
         color: #000000 !important;
         border-radius: 8px;
         box-shadow: none !important;
     }
 
-    /* Force hover/active states to also be white/black */
+    /* Force hover/active/focus states to also be white/black */
     [data-testid="stExpander"] summary:hover,
-    [data-testid="stExpander"] summary:active {
+    [data-testid="stExpander"] summary:active,
+    [data-testid="stExpander"] summary:focus {
+        background: #ffffff !important;
         background-color: #ffffff !important;
         color: #000000 !important;
     }
@@ -144,8 +155,8 @@ def clear_input():
 
 
 def main():
-    st.markdown("<div class='app-title'>🤖 The Dilbert-o-Matic 3000</div>", unsafe_allow_html=True)
-    st.markdown("<div class='app-subtitle'>Transform plain English into enterprise-grade corporate speak</div>", unsafe_allow_html=True)
+    st.markdown("<div class='app-title'>Dilbert-o-Matic</div>", unsafe_allow_html=True)
+    st.markdown("<div class='app-subtitle'>Transform plain English into enterprise-grade corporate jargons</div>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -224,11 +235,18 @@ def main():
     with st.expander("ℹ️ About this App"):
         st.markdown(
             """
-        **The Dilbert-o-Matic 3000** — a small T5-based demo that rewrites plain English as corporate jargon.
+        **About the Dilbert-o-Matic**
 
-        **Model location:** `models/t5_jargon_v1`
-        **Notes:** This cleaned version removes duplicate imports and duplicate functions, consolidates CSS
-        into one block, and ensures the header/title is visible and centered.
+        This Streamlit app serves as the interactive demo for a complete MLOps project.
+
+        * **Core Model:** The translation is performed by a fine-tuned `google/flan-t5-small` model. It's a custom 8-layer, 6-head configuration loaded locally from the `models/t5_jargon_v1` directory.
+
+        * **MLOps Pipeline:** This app is the final step. It's supported by a full pipeline built with **Dagster** that automates the entire model lifecycle:
+            * **Data Generation:** A `weak_labeler` asset creates new training data.
+            * **Data Versioning:** All datasets (like `training_data.jsonl`) are versioned using **DVC**.
+            * **Training & QA:** The pipeline includes assets for `model_trainer` and a `model_qa_gate` to ensure quality.
+            * **Monitoring:** It features a `jargon_drift_detector` and a `jargon_candidate_sensor` to find new jargon and monitor for data drift.
+            * **Registry:** **MLflow** is used for experiment tracking and model registration.
         """
         )
 
